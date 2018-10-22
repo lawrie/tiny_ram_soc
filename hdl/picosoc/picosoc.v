@@ -17,14 +17,6 @@
  *
  */
 
-`ifndef PICORV32_REGS
-`ifdef PICORV32_V
-`error "picosoc.v must be read before picorv32.v!"
-`endif
-
-`define PICORV32_REGS picosoc_regs
-`endif
-
 module picosoc (
 	input clk,
 	input resetn,
@@ -102,18 +94,10 @@ module picosoc (
 			simpleuart_reg_dat_sel ? simpleuart_reg_dat_do : 32'h 0000_0000;
 
 	picorv32 #(
-		.STACKADDR(STACKADDR),
-		.PROGADDR_RESET(PROGADDR_RESET),
-		.PROGADDR_IRQ(PROGADDR_IRQ),
-		.BARREL_SHIFTER(BARREL_SHIFTER),
-		.COMPRESSED_ISA(ENABLE_COMPRESSED),
-		.ENABLE_COUNTERS(ENABLE_COUNTERS),
-		.ENABLE_MUL(ENABLE_MULDIV),
-		.ENABLE_DIV(ENABLE_MULDIV),
-		.ENABLE_IRQ(ENABLE_IRQ),
-		.ENABLE_IRQ_QREGS(ENABLE_IRQ_QREGS),
-		.TWO_STAGE_SHIFT(ENABLE_TWO_STAGE_SHIFT)
-	) cpu (
+	        .COMPRESSED_ISA(0),
+        	.ENABLE_MUL(0),
+        	.ENABLE_DIV(0),
+        	.ENABLE_IRQ(1)) cpu (
 		.clk         (clk        ),
 		.resetn      (resetn     ),
 		.mem_valid   (mem_valid  ),
@@ -154,28 +138,6 @@ module picosoc (
 		.wdata(mem_wdata),
 		.rdata(ram_rdata)
 	);
-endmodule
-
-// Implementation note:
-// Replace the following two modules with wrappers for your SRAM cells.
-
-module picosoc_regs (
-	input clk, wen,
-	input [5:0] waddr,
-	input [5:0] raddr1,
-	input [5:0] raddr2,
-	input [31:0] wdata,
-	output [31:0] rdata1,
-	output [31:0] rdata2
-);
-//	reg [31:0] regs [0:31];
-	reg [31:0] regs [0:63];
-
-	always @(posedge clk)
-		if (wen) regs[waddr[5:0]] <= wdata;
-
-	assign rdata1 = regs[raddr1[5:0]];
-	assign rdata2 = regs[raddr2[5:0]];
 endmodule
 
 module picosoc_mem #(

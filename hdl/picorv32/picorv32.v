@@ -42,14 +42,6 @@
   `define assert(assert_expr) empty_statement
 `endif
 
-// uncomment this for register file in extra module
-// `define PICORV32_REGS picorv32_regs
-
-// this macro can be used to check if the verilog files in your
-// design are read in the correct order.
-`define PICORV32_V
-
-
 /***************************************************************
  * picorv32
  ***************************************************************/
@@ -117,12 +109,9 @@ module picorv32 #(
 
 `ifdef RISCV_FORMAL
 	output reg        rvfi_valid,
-	output reg [63:0] rvfi_order,
+	output reg [ 7:0] rvfi_order,
 	output reg [31:0] rvfi_insn,
 	output reg        rvfi_trap,
-	output reg        rvfi_halt,
-	output reg        rvfi_intr,
-	output reg [ 1:0] rvfi_mode,
 	output reg [ 4:0] rvfi_rs1_addr,
 	output reg [ 4:0] rvfi_rs2_addr,
 	output reg [31:0] rvfi_rs1_rdata,
@@ -158,6 +147,7 @@ module picorv32 #(
 
 	reg [63:0] count_cycle, count_instr;
 	reg [31:0] reg_pc, reg_next_pc, reg_op1, reg_op2, reg_out;
+	reg [31:0] cpuregs [0:regfile_size-1];
 	reg [4:0] reg_sh;
 
 	reg [31:0] next_insn_opcode;
@@ -183,9 +173,6 @@ module picorv32 #(
 	reg [31:0] irq_pending;
 	reg [31:0] timer;
 
-`ifndef PICORV32_REGS
-	reg [31:0] cpuregs [0:regfile_size-1];
-
 	integer i;
 	initial begin
 		if (REGS_INIT_ZERO) begin
@@ -193,7 +180,6 @@ module picorv32 #(
 				cpuregs[i] = 0;
 		end
 	end
-`endif
 
 	task empty_statement;
 		// This task is used by the `assert directive in non-formal mode to
@@ -202,7 +188,7 @@ module picorv32 #(
 	endtask
 
 `ifdef DEBUGREGS
-	wire [31:0] dbg_reg_x0  = 0;
+	wire [31:0] dbg_reg_x0  = cpuregs[0];
 	wire [31:0] dbg_reg_x1  = cpuregs[1];
 	wire [31:0] dbg_reg_x2  = cpuregs[2];
 	wire [31:0] dbg_reg_x3  = cpuregs[3];
@@ -315,8 +301,8 @@ module picorv32 #(
 		(* parallel_case *)
 		case (1'b1)
 			ENABLE_PCPI && pcpi_ready: begin
-				pcpi_int_wr = ENABLE_PCPI ? pcpi_wr : 0;
-				pcpi_int_rd = ENABLE_PCPI ? pcpi_rd : 0;
+				pcpi_int_wr = pcpi_wr;
+				pcpi_int_rd = pcpi_rd;
 			end
 			(ENABLE_MUL || ENABLE_FAST_MUL) && pcpi_mul_ready: begin
 				pcpi_int_wr = pcpi_mul_wr;
@@ -666,7 +652,7 @@ module picorv32 #(
 			instr_add, instr_sub, instr_sll, instr_slt, instr_sltu, instr_xor, instr_srl, instr_sra, instr_or, instr_and,
 			instr_rdcycle, instr_rdcycleh, instr_rdinstr, instr_rdinstrh,
 			instr_getq, instr_setq, instr_retirq, instr_maskirq, instr_waitirq, instr_timer};
-
+	
 	wire is_rdcycle_rdcycleh_rdinstr_rdinstrh;
 	assign is_rdcycle_rdcycleh_rdinstr_rdinstrh = |{instr_rdcycle, instr_rdcycleh, instr_rdinstr, instr_rdinstrh};
 
@@ -849,7 +835,7 @@ module picorv32 #(
 			instr_lui     <= mem_rdata_latched[6:0] == 7'b0110111;
 			instr_auipc   <= mem_rdata_latched[6:0] == 7'b0010111;
 			instr_jal     <= mem_rdata_latched[6:0] == 7'b1101111;
-			instr_jalr    <= mem_rdata_latched[6:0] == 7'b1100111 && mem_rdata_latched[14:12] == 3'b000;
+			instr_jalr    <= mem_rdata_latched[6:0] == 7'b1100111;
 			instr_retirq  <= mem_rdata_latched[6:0] == 7'b0001011 && mem_rdata_latched[31:25] == 7'b0000010 && ENABLE_IRQ;
 			instr_waitirq <= mem_rdata_latched[6:0] == 7'b0001011 && mem_rdata_latched[31:25] == 7'b0000100 && ENABLE_IRQ;
 
@@ -918,20 +904,18 @@ module picorv32 #(
 								decoded_rs1 <= 0;
 							end
 							3'b 011: begin
-								if (mem_rdata_latched[12] || mem_rdata_latched[6:2]) begin
-									if (mem_rdata_latched[11:7] == 2) begin // C.ADDI16SP
-										is_alu_reg_imm <= 1;
-										decoded_rd <= mem_rdata_latched[11:7];
-										decoded_rs1 <= mem_rdata_latched[11:7];
-									end else begin // C.LUI
-										instr_lui <= 1;
-										decoded_rd <= mem_rdata_latched[11:7];
-										decoded_rs1 <= 0;
-									end
+								if (mem_rdata_latched[11:7] == 2) begin // C.ADDI16SP
+									is_alu_reg_imm <= 1;
+									decoded_rd <= mem_rdata_latched[11:7];
+									decoded_rs1 <= mem_rdata_latched[11:7];
+								end else begin // C.LUI
+									instr_lui <= 1;
+									decoded_rd <= mem_rdata_latched[11:7];
+									decoded_rs1 <= 0;
 								end
 							end
 							3'b100: begin
-								if (!mem_rdata_latched[11] && !mem_rdata_latched[12]) begin // C.SRLI, C.SRAI
+								if (mem_rdata_latched[11] == 1'b0) begin // C.SRLI, C.SRAI
 									is_alu_reg_imm <= 1;
 									decoded_rd <= 8 + mem_rdata_latched[9:7];
 									decoded_rs1 <= 8 + mem_rdata_latched[9:7];
@@ -967,22 +951,18 @@ module picorv32 #(
 					2'b10: begin // Quadrant 2
 						case (mem_rdata_latched[15:13])
 							3'b000: begin // C.SLLI
-								if (!mem_rdata_latched[12]) begin
-									is_alu_reg_imm <= 1;
-									decoded_rd <= mem_rdata_latched[11:7];
-									decoded_rs1 <= mem_rdata_latched[11:7];
-									decoded_rs2 <= {mem_rdata_latched[12], mem_rdata_latched[6:2]};
-								end
+								is_alu_reg_imm <= 1;
+								decoded_rd <= mem_rdata_latched[11:7];
+								decoded_rs1 <= mem_rdata_latched[11:7];
+								decoded_rs2 <= {mem_rdata_latched[12], mem_rdata_latched[6:2]};
 							end
 							3'b010: begin // C.LWSP
-								if (mem_rdata_latched[11:7]) begin
-									is_lb_lh_lw_lbu_lhu <= 1;
-									decoded_rd <= mem_rdata_latched[11:7];
-									decoded_rs1 <= 2;
-								end
+								is_lb_lh_lw_lbu_lhu <= 1;
+								decoded_rd <= mem_rdata_latched[11:7];
+								decoded_rs1 <= 2;
 							end
 							3'b100: begin
-								if (mem_rdata_latched[12] == 0 && mem_rdata_latched[11:7] != 0 && mem_rdata_latched[6:2] == 0) begin // C.JR
+								if (mem_rdata_latched[12] == 0 && mem_rdata_latched[6:2] == 0) begin // C.JR
 									instr_jalr <= 1;
 									decoded_rd <= 0;
 									decoded_rs1 <= mem_rdata_latched[11:7];
@@ -1189,7 +1169,7 @@ module picorv32 #(
 	reg [regindex_bits-1:0] latched_rd;
 
 	reg [31:0] current_pc;
-	assign next_pc = latched_store && latched_branch ? reg_out & ~1 : reg_next_pc;
+	assign next_pc = latched_store && latched_branch ? reg_out : reg_next_pc;
 
 	reg [3:0] pcpi_timeout_counter;
 	reg pcpi_timeout;
@@ -1261,11 +1241,6 @@ module picorv32 #(
 			BARREL_SHIFTER && (instr_srl || instr_srli || instr_sra || instr_srai):
 				alu_out = alu_shr;
 		endcase
-
-`ifdef RISCV_FORMAL_BLACKBOX_ALU
-		alu_out_0 = $anyseq;
-		alu_out = $anyseq;
-`endif
 	end
 
 	reg clear_prefetched_high_word_q;
@@ -1312,63 +1287,22 @@ module picorv32 #(
 		end
 	end
 
-`ifndef PICORV32_REGS
 	always @(posedge clk) begin
-		if (resetn && cpuregs_write && latched_rd)
+		if (resetn && cpuregs_write)
 			cpuregs[latched_rd] <= cpuregs_wrdata;
 	end
 
 	always @* begin
 		decoded_rs = 'bx;
 		if (ENABLE_REGS_DUALPORT) begin
-`ifndef RISCV_FORMAL_BLACKBOX_REGS
 			cpuregs_rs1 = decoded_rs1 ? cpuregs[decoded_rs1] : 0;
 			cpuregs_rs2 = decoded_rs2 ? cpuregs[decoded_rs2] : 0;
-`else
-			cpuregs_rs1 = decoded_rs1 ? $anyseq : 0;
-			cpuregs_rs2 = decoded_rs2 ? $anyseq : 0;
-`endif
 		end else begin
 			decoded_rs = (cpu_state == cpu_state_ld_rs2) ? decoded_rs2 : decoded_rs1;
-`ifndef RISCV_FORMAL_BLACKBOX_REGS
 			cpuregs_rs1 = decoded_rs ? cpuregs[decoded_rs] : 0;
-`else
-			cpuregs_rs1 = decoded_rs ? $anyseq : 0;
-`endif
 			cpuregs_rs2 = cpuregs_rs1;
 		end
 	end
-`else
-	wire[31:0] cpuregs_rdata1;
-	wire[31:0] cpuregs_rdata2;
-
-	wire [5:0] cpuregs_waddr = latched_rd;
-	wire [5:0] cpuregs_raddr1 = ENABLE_REGS_DUALPORT ? decoded_rs1 : decoded_rs;
-	wire [5:0] cpuregs_raddr2 = ENABLE_REGS_DUALPORT ? decoded_rs2 : 0;
-
-	`PICORV32_REGS cpuregs (
-		.clk(clk),
-		.wen(resetn && cpuregs_write && latched_rd),
-		.waddr(cpuregs_waddr),
-		.raddr1(cpuregs_raddr1),
-		.raddr2(cpuregs_raddr2),
-		.wdata(cpuregs_wrdata),
-		.rdata1(cpuregs_rdata1),
-		.rdata2(cpuregs_rdata2)
-	);
-
-	always @* begin
-		decoded_rs = 'bx;
-		if (ENABLE_REGS_DUALPORT) begin
-			cpuregs_rs1 = decoded_rs1 ? cpuregs_rdata1 : 0;
-			cpuregs_rs2 = decoded_rs2 ? cpuregs_rdata2 : 0;
-		end else begin
-			decoded_rs = (cpu_state == cpu_state_ld_rs2) ? decoded_rs2 : decoded_rs1;
-			cpuregs_rs1 = decoded_rs ? cpuregs_rdata1 : 0;
-			cpuregs_rs2 = cpuregs_rs1;
-		end
-	end
-`endif
 
 	assign launch_next_insn = cpu_state == cpu_state_fetch && decoder_trigger && (!ENABLE_IRQ || irq_delay || irq_active || !(irq_pending & ~irq_mask));
 
@@ -1476,7 +1410,7 @@ module picorv32 #(
 				(* parallel_case *)
 				case (1'b1)
 					latched_branch: begin
-						current_pc = latched_store ? (latched_stalu ? alu_out_q : reg_out) & ~1 : reg_next_pc;
+						current_pc = latched_store ? (latched_stalu ? alu_out_q : reg_out) : reg_next_pc;
 						`debug($display("ST_RD:  %2d 0x%08x, BRANCH 0x%08x", latched_rd, reg_pc + (latched_compr ? 2 : 4), current_pc);)
 					end
 					latched_store && !latched_branch: begin
@@ -1947,12 +1881,9 @@ module picorv32 #(
 	end
 
 `ifdef RISCV_FORMAL
-	reg dbg_irq_call;
-	reg dbg_irq_enter;
-	reg [31:0] dbg_irq_ret;
 	always @(posedge clk) begin
 		rvfi_valid <= resetn && (launch_next_insn || trap) && dbg_valid_insn;
-		rvfi_order <= resetn ? rvfi_order + rvfi_valid : 0;
+		rvfi_order <= 0;
 
 		rvfi_insn <= dbg_insn_opcode;
 		rvfi_rs1_addr <= dbg_rs1val_valid ? dbg_insn_rs1 : 0;
@@ -1961,28 +1892,12 @@ module picorv32 #(
 		rvfi_rs1_rdata <= dbg_rs1val_valid ? dbg_rs1val : 0;
 		rvfi_rs2_rdata <= dbg_rs2val_valid ? dbg_rs2val : 0;
 		rvfi_trap <= trap;
-		rvfi_halt <= trap;
-		rvfi_intr <= dbg_irq_enter;
-		rvfi_mode <= 3;
-
-		if (!resetn) begin
-			dbg_irq_call <= 0;
-			dbg_irq_enter <= 0;
-		end else
-		if (rvfi_valid) begin
-			dbg_irq_call <= 0;
-			dbg_irq_enter <= dbg_irq_call;
-		end else
-		if (irq_state == 1) begin
-			dbg_irq_call <= 1;
-			dbg_irq_ret <= next_pc;
-		end
 
 		if (!resetn) begin
 			rvfi_rd_addr <= 0;
 			rvfi_rd_wdata <= 0;
 		end else
-		if (cpuregs_write && !irq_state) begin
+		if (cpuregs_write) begin
 			rvfi_rd_addr <= latched_rd;
 			rvfi_rd_wdata <= latched_rd ? cpuregs_wrdata : 0;
 		end else
@@ -1991,41 +1906,24 @@ module picorv32 #(
 			rvfi_rd_wdata <= 0;
 		end
 
-		casez (dbg_insn_opcode)
-			32'b 0000000_?????_000??_???_?????_0001011: begin // getq
-				rvfi_rs1_addr <= 0;
-				rvfi_rs1_rdata <= 0;
-			end
-			32'b 0000001_?????_?????_???_000??_0001011: begin // setq
-				rvfi_rd_addr <= 0;
-				rvfi_rd_wdata <= 0;
-			end
-			32'b 0000010_?????_00000_???_00000_0001011: begin // retirq
-				rvfi_rs1_addr <= 0;
-				rvfi_rs1_rdata <= 0;
-			end
-		endcase
-
-		if (!dbg_irq_call) begin
-			if (dbg_mem_instr) begin
-				rvfi_mem_addr <= 0;
-				rvfi_mem_rmask <= 0;
-				rvfi_mem_wmask <= 0;
-				rvfi_mem_rdata <= 0;
-				rvfi_mem_wdata <= 0;
-			end else
-			if (dbg_mem_valid && dbg_mem_ready) begin
-				rvfi_mem_addr <= dbg_mem_addr;
-				rvfi_mem_rmask <= dbg_mem_wstrb ? 0 : ~0;
-				rvfi_mem_wmask <= dbg_mem_wstrb;
-				rvfi_mem_rdata <= dbg_mem_rdata;
-				rvfi_mem_wdata <= dbg_mem_wdata;
-			end
+		if (dbg_mem_instr) begin
+			rvfi_mem_addr <= 0;
+			rvfi_mem_rmask <= 0;
+			rvfi_mem_wmask <= 0;
+			rvfi_mem_rdata <= 0;
+			rvfi_mem_wdata <= 0;
+		end else
+		if (dbg_mem_valid && dbg_mem_ready) begin
+			rvfi_mem_addr <= dbg_mem_addr;
+			rvfi_mem_rmask <= dbg_mem_wstrb ? 0 : ~0;
+			rvfi_mem_wmask <= dbg_mem_wstrb;
+			rvfi_mem_rdata <= dbg_mem_rdata;
+			rvfi_mem_wdata <= dbg_mem_wdata;
 		end
 	end
 
 	always @* begin
-		rvfi_pc_wdata = dbg_irq_call ? dbg_irq_ret : dbg_insn_addr;
+		rvfi_pc_wdata = dbg_insn_addr;
 	end
 `endif
 
@@ -2094,29 +1992,6 @@ module picorv32 #(
 		end
 	end
 `endif
-endmodule
-
-// This is a simple example implementation of PICORV32_REGS.
-// Use the PICORV32_REGS mechanism if you want to use custom
-// memory resources to implement the processor register file.
-// Note that your implementation must match the requirements of
-// the PicoRV32 configuration. (e.g. QREGS, etc)
-module picorv32_regs (
-	input clk, wen,
-	input [5:0] waddr,
-	input [5:0] raddr1,
-	input [5:0] raddr2,
-	input [31:0] wdata,
-	output [31:0] rdata1,
-	output [31:0] rdata2
-);
-	reg [31:0] regs [0:30];
-
-	always @(posedge clk)
-		if (wen) regs[~waddr[4:0]] <= wdata;
-
-	assign rdata1 = regs[~raddr1[4:0]];
-	assign rdata2 = regs[~raddr2[4:0]];
 endmodule
 
 
@@ -2331,15 +2206,7 @@ module picorv32_pcpi_fast_mul #(
 	assign pcpi_wr = active[EXTRA_MUL_FFS ? 3 : 1];
 	assign pcpi_wait = 0;
 	assign pcpi_ready = active[EXTRA_MUL_FFS ? 3 : 1];
-`ifdef RISCV_FORMAL_ALTOPS
-	assign pcpi_rd =
-			instr_mul    ? (pcpi_rs1 + pcpi_rs2) ^ 32'h5876063e :
-			instr_mulh   ? (pcpi_rs1 + pcpi_rs2) ^ 32'hf6583fb7 :
-			instr_mulhsu ? (pcpi_rs1 - pcpi_rs2) ^ 32'hecfbe137 :
-			instr_mulhu  ? (pcpi_rs1 + pcpi_rs2) ^ 32'h949ce5e8 : 1'bx;
-`else
 	assign pcpi_rd = shift_out ? (EXTRA_MUL_FFS ? rd_q : rd) >> 32 : (EXTRA_MUL_FFS ? rd_q : rd);
-`endif
 endmodule
 
 
@@ -2380,8 +2247,8 @@ module picorv32_pcpi_div (
 			endcase
 		end
 
-		pcpi_wait <= instr_any_div_rem && resetn;
-		pcpi_wait_q <= pcpi_wait && resetn;
+		pcpi_wait <= instr_any_div_rem;
+		pcpi_wait_q <= pcpi_wait;
 	end
 
 	reg [31:0] dividend;
@@ -2411,30 +2278,17 @@ module picorv32_pcpi_div (
 			running <= 0;
 			pcpi_ready <= 1;
 			pcpi_wr <= 1;
-`ifdef RISCV_FORMAL_ALTOPS
-			case (1)
-				instr_div:  pcpi_rd <= (pcpi_rs1 - pcpi_rs2) ^ 32'h7f8529ec;
-				instr_divu: pcpi_rd <= (pcpi_rs1 - pcpi_rs2) ^ 32'h10e8fd70;
-				instr_rem:  pcpi_rd <= (pcpi_rs1 - pcpi_rs2) ^ 32'h8da68fa5;
-				instr_remu: pcpi_rd <= (pcpi_rs1 - pcpi_rs2) ^ 32'h3138d0e1;
-			endcase
-`else
 			if (instr_div || instr_divu)
 				pcpi_rd <= outsign ? -quotient : quotient;
 			else
 				pcpi_rd <= outsign ? -dividend : dividend;
-`endif
 		end else begin
 			if (divisor <= dividend) begin
 				dividend <= dividend - divisor;
 				quotient <= quotient | quotient_msk;
 			end
 			divisor <= divisor >> 1;
-`ifdef RISCV_FORMAL_ALTOPS
-			quotient_msk <= quotient_msk >> 5;
-`else
 			quotient_msk <= quotient_msk >> 1;
-`endif
 		end
 	end
 endmodule
@@ -2511,28 +2365,6 @@ module picorv32_axi #(
 	// IRQ interface
 	input  [31:0] irq,
 	output [31:0] eoi,
-
-`ifdef RISCV_FORMAL
-	output        rvfi_valid,
-	output [63:0] rvfi_order,
-	output [31:0] rvfi_insn,
-	output        rvfi_trap,
-	output        rvfi_halt,
-	output        rvfi_intr,
-	output [ 4:0] rvfi_rs1_addr,
-	output [ 4:0] rvfi_rs2_addr,
-	output [31:0] rvfi_rs1_rdata,
-	output [31:0] rvfi_rs2_rdata,
-	output [ 4:0] rvfi_rd_addr,
-	output [31:0] rvfi_rd_wdata,
-	output [31:0] rvfi_pc_rdata,
-	output [31:0] rvfi_pc_wdata,
-	output [31:0] rvfi_mem_addr,
-	output [ 3:0] rvfi_mem_rmask,
-	output [ 3:0] rvfi_mem_wmask,
-	output [31:0] rvfi_mem_rdata,
-	output [31:0] rvfi_mem_wdata,
-`endif
 
 	// Trace Interface
 	output        trace_valid,
@@ -2625,28 +2457,6 @@ module picorv32_axi #(
 
 		.irq(irq),
 		.eoi(eoi),
-
-`ifdef RISCV_FORMAL
-		.rvfi_valid    (rvfi_valid    ),
-		.rvfi_order    (rvfi_order    ),
-		.rvfi_insn     (rvfi_insn     ),
-		.rvfi_trap     (rvfi_trap     ),
-		.rvfi_halt     (rvfi_halt     ),
-		.rvfi_intr     (rvfi_intr     ),
-		.rvfi_rs1_addr (rvfi_rs1_addr ),
-		.rvfi_rs2_addr (rvfi_rs2_addr ),
-		.rvfi_rs1_rdata(rvfi_rs1_rdata),
-		.rvfi_rs2_rdata(rvfi_rs2_rdata),
-		.rvfi_rd_addr  (rvfi_rd_addr  ),
-		.rvfi_rd_wdata (rvfi_rd_wdata ),
-		.rvfi_pc_rdata (rvfi_pc_rdata ),
-		.rvfi_pc_wdata (rvfi_pc_wdata ),
-		.rvfi_mem_addr (rvfi_mem_addr ),
-		.rvfi_mem_rmask(rvfi_mem_rmask),
-		.rvfi_mem_wmask(rvfi_mem_wmask),
-		.rvfi_mem_rdata(rvfi_mem_rdata),
-		.rvfi_mem_wdata(rvfi_mem_wdata),
-`endif
 
 		.trace_valid(trace_valid),
 		.trace_data (trace_data)
@@ -2798,28 +2608,6 @@ module picorv32_wb #(
 	input  [31:0] irq,
 	output [31:0] eoi,
 
-`ifdef RISCV_FORMAL
-	output        rvfi_valid,
-	output [63:0] rvfi_order,
-	output [31:0] rvfi_insn,
-	output        rvfi_trap,
-	output        rvfi_halt,
-	output        rvfi_intr,
-	output [ 4:0] rvfi_rs1_addr,
-	output [ 4:0] rvfi_rs2_addr,
-	output [31:0] rvfi_rs1_rdata,
-	output [31:0] rvfi_rs2_rdata,
-	output [ 4:0] rvfi_rd_addr,
-	output [31:0] rvfi_rd_wdata,
-	output [31:0] rvfi_pc_rdata,
-	output [31:0] rvfi_pc_wdata,
-	output [31:0] rvfi_mem_addr,
-	output [ 3:0] rvfi_mem_rmask,
-	output [ 3:0] rvfi_mem_wmask,
-	output [31:0] rvfi_mem_rdata,
-	output [31:0] rvfi_mem_wdata,
-`endif
-
 	// Trace Interface
 	output        trace_valid,
 	output [35:0] trace_data,
@@ -2889,28 +2677,6 @@ module picorv32_wb #(
 
 		.irq(irq),
 		.eoi(eoi),
-
-`ifdef RISCV_FORMAL
-		.rvfi_valid    (rvfi_valid    ),
-		.rvfi_order    (rvfi_order    ),
-		.rvfi_insn     (rvfi_insn     ),
-		.rvfi_trap     (rvfi_trap     ),
-		.rvfi_halt     (rvfi_halt     ),
-		.rvfi_intr     (rvfi_intr     ),
-		.rvfi_rs1_addr (rvfi_rs1_addr ),
-		.rvfi_rs2_addr (rvfi_rs2_addr ),
-		.rvfi_rs1_rdata(rvfi_rs1_rdata),
-		.rvfi_rs2_rdata(rvfi_rs2_rdata),
-		.rvfi_rd_addr  (rvfi_rd_addr  ),
-		.rvfi_rd_wdata (rvfi_rd_wdata ),
-		.rvfi_pc_rdata (rvfi_pc_rdata ),
-		.rvfi_pc_wdata (rvfi_pc_wdata ),
-		.rvfi_mem_addr (rvfi_mem_addr ),
-		.rvfi_mem_rmask(rvfi_mem_rmask),
-		.rvfi_mem_wmask(rvfi_mem_wmask),
-		.rvfi_mem_rdata(rvfi_mem_rdata),
-		.rvfi_mem_wdata(rvfi_mem_wdata),
-`endif
 
 		.trace_valid(trace_valid),
 		.trace_data (trace_data)

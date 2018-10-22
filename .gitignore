@@ -14,3 +14,4 @@ firmware.map
 *.rpt
 *.blif
 *.elf
+*.hex
