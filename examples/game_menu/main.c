@@ -9,12 +9,20 @@
 #define reg_leds (*(volatile uint32_t*)0x03000000)
 #define reg_buttons (*(volatile uint32_t*)0x03000004)
 
+#define reg_flash_prescale (*(volatile uint32_t*)0x08000000)
+#define reg_flash_cs (*(volatile uint32_t*)0x08000004)
+#define reg_flash_xfer (*(volatile uint32_t*)0x08000008)
+#define reg_flash_mode (*(volatile uint32_t*)0x0800000C)
+
 #define BUTTON_UP 0x04
 #define BUTTON_DOWN 0x10
 #define BUTTON_LEFT 0x80
 #define BUTTON_RIGHT 0x08
 #define BUTTON_B 0x20
 #define BUTTON_A 0x40
+
+#define USER_IMAGE 0x28000
+#define USER_DATA 0x50000
 
 void sdcard_error(char* msg, uint32_t r) {
   print(msg);
@@ -30,6 +38,86 @@ void sdcard_error2(char* msg, uint32_t r1, uint32_t r2) {
   print(" , ");
   print_hex(r2, 8);
   print("\n");
+}
+
+void flash_begin() {
+  reg_flash_cs = 0;
+}
+
+void flash_end() {
+  reg_flash_cs = 1;
+}
+
+uint8_t flash_xfer(uint8_t d) {
+  reg_flash_xfer = d;
+  return reg_flash_xfer;
+}
+
+void flash_write_enable() {
+	flash_begin();
+	flash_xfer(0x06);
+	flash_end();
+}
+
+void flash_bulk_erase() {
+	flash_begin();
+	flash_xfer(0xc7);
+	flash_end();
+}
+
+void flash_erase_64kB(int addr) {
+	flash_begin();
+	flash_xfer(0xd8);
+	flash_xfer(addr >> 16);
+	flash_xfer(addr >> 8);
+	flash_xfer(addr);
+	flash_end();
+}
+
+void flash_erase_32kB(int addr) {
+	flash_begin();
+	flash_xfer(0x52);
+	flash_xfer(addr >> 16);
+	flash_xfer(addr >> 8);
+	flash_xfer(addr);
+	flash_end();
+}
+
+void flash_write(int addr, uint8_t *data, int n) {
+	flash_begin();
+	flash_xfer(0x02);
+	flash_xfer(addr >> 16);
+	flash_xfer(addr >> 8);
+	flash_xfer(addr);
+	while (n--)
+		flash_xfer(*(data++));
+	flash_end();
+}
+
+void flash_read(int addr, uint8_t *data, int n) {
+	flash_begin();
+	flash_xfer(0x03);
+	flash_xfer(addr >> 16);
+	flash_xfer(addr >> 8);
+	flash_xfer(addr);
+	while (n--)
+		*(data++) = flash_xfer(0);
+	flash_end();
+}
+
+void flash_wait() {
+	while (1)
+	{
+		flash_begin();
+		flash_xfer(0x05);
+		int status = flash_xfer(0);
+		flash_end();
+
+		if ((status & 0x01) == 0)
+			break;
+
+		delay(1);
+	}
 }
 
 #define MAX_GAMES 4
@@ -49,6 +137,28 @@ void main() {
     lcd_draw_text(80,40,"Choose a game :", 0x00A0, 0x6E5D);    
 
     num_games = 0;
+
+    // Read the flash id
+
+    reg_flash_prescale = 4;
+    reg_flash_mode = 0;
+    reg_flash_cs = 1;
+
+    // power_up
+    flash_begin();
+    flash_xfer(0xab);
+    flash_end();
+
+    // read flash id
+    flash_begin();
+    flash_xfer(0x9f);
+    print("flash id:");
+
+    for (int i = 0; i < 20; i++)
+        print_hex(flash_xfer(0x00), 2);
+	
+    print("\n");
+    flash_end();
 
     sdcard_init();
     //print("SD Card Initialized.\n\n");

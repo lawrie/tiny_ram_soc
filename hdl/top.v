@@ -25,10 +25,10 @@ module top (
     input SER_RX,
 
 `ifdef flash_write
-    SPI_IO1,
-    SPI_SS,
-    SPI_IO0,
-    SPI_SCK,
+    inout SPI_IO1,
+    inout SPI_SS,
+    inout SPI_IO0,
+    inout SPI_SCK,
 `endif
 
 `ifdef pdm_audio
@@ -319,7 +319,7 @@ assign iomem_ready = i2c_en ? i2c_iomem_ready : gpio_en ? gpio_iomem_ready
                      : sdcard_en ? sdcard_iomem_ready
 `endif
 `ifdef flash_write
-                     : flash_en ? sdcard_iomem_ready
+                     : flash_en ? flash_iomem_ready
 `endif
                      : 1'b1;
 
