@@ -24,6 +24,13 @@ module top (
     output SER_TX,
     input SER_RX,
 
+`ifdef flash_write
+    SPI_IO1,
+    SPI_SS,
+    SPI_IO0,
+    SPI_SCK,
+`endif
+
 `ifdef pdm_audio
     // Audio out pin
 		output AUDIO_RIGHT,
@@ -125,7 +132,8 @@ module top (
     wire audio_en  = (iomem_addr[31:24] == 8'h04); /* Audio device mapped to 0x04xx_xxxx */
     wire video_en  = (iomem_addr[31:24] == 8'h05); /* Video device mapped to 0x05xx_xxxx */
     wire sdcard_en  = (iomem_addr[31:24] == 8'h06); /* SPI SD card mapped to 0x06xx_xxxx */
-    wire i2c_en    = (iomem_addr[31:24] == 8'h07); /* I2C device mapped to 0x067xx_xxxx */
+    wire i2c_en    = (iomem_addr[31:24] == 8'h07); /* I2C device mapped to 0x07xx_xxxx */
+    wire flash_en    = (iomem_addr[31:24] == 8'h08); /* flash memory SPI mapped to 0x08xx_xxxx */
 
 
 `ifdef pdm_audio
@@ -159,6 +167,27 @@ module top (
     .OLED_SPI_CS(OLED_SPI_CS),
     .OLED_SPI_DC(OLED_SPI_DC),
     .OLED_SPI_RES(OLED_SPI_RES)
+  );
+`endif
+
+  wire flash_iomem_ready;
+
+`ifdef flash_write
+  wire [31:0] flash_iomem_rdata;
+  
+  flash_write flash (
+    .clk(CLK),
+    .resetn(resetn),
+    .iomem_valid(iomem_valid && flash_en),
+    .iomem_wstrb(iomem_wstrb),
+    .iomem_addr(iomem_addr),
+    .iomem_wdata(iomem_wdata),
+    .iomem_rdata(flash_iomem_rdata),
+    .iomem_ready(flash_iomem_ready),
+    .SPI_MISO(SPI_IO1),
+    .SPI_SCK(SPI_SCK),
+    .SPI_CS(SPI_SS),
+    .SPI_MOSI(SPI_IO0)
   );
 `endif
 
@@ -289,12 +318,18 @@ assign iomem_ready = i2c_en ? i2c_iomem_ready : gpio_en ? gpio_iomem_ready
 `ifdef sdcard
                      : sdcard_en ? sdcard_iomem_ready
 `endif
+`ifdef flash_write
+                     : flash_en ? sdcard_iomem_ready
+`endif
                      : 1'b1;
 
 assign iomem_rdata =  i2c_iomem_ready ? i2c_iomem_rdata
                     : gpio_iomem_ready ? gpio_iomem_rdata
 `ifdef sdcard
                     : sdcard_iomem_ready ? sdcard_iomem_rdata
+`endif
+`ifdef flash_write
+                    : flash_iomem_ready ? flash_iomem_rdata
 `endif
                     : 32'h0;
 
