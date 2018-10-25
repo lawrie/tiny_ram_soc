@@ -19,7 +19,8 @@ C_FILES = main.c \
           $(INCLUDE_DIR)/uart/uart.c \
           $(INCLUDE_DIR)/ili9341/ili9341.c \
           $(INCLUDE_DIR)/delay/delay.c \
-          $(INCLUDE_DIR)/sdcard/sdcard.c
+          $(INCLUDE_DIR)/sdcard/sdcard.c \
+          $(INCLUDE_DIR)/flash/flash.c
 
 DEFINES = -Dgpio -Dili9341_direct -Dsdcard -Dflash_write
 
