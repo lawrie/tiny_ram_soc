@@ -89,11 +89,6 @@ void copy_file(int index) {
     print("\n");
 #endif
 
-    // Write the file to user data area of flash
-    flash_write_enable();
-    flash_erase_32kB(USER_DATA);
-    flash_wait();
-  
     // Assumes file is less than 32kb
     uint32_t n = 0;
     for(uint32_t i =first_clusters[index];i < 128;i = fat[i]) {
@@ -107,7 +102,14 @@ void copy_file(int index) {
             sdcard_read(buffer, lba+j);
             uint32_t len = ((file_sizes[index] - n) < 256 ? (file_sizes[index] - n) : 256);
             if (len == 0) break;
-        
+       
+            if ((n & 0x7fff) == 0) {
+                // Erase data in 32kb chunks
+                flash_write_enable();
+                flash_erase_32kB(USER_DATA + n);
+                flash_wait();
+            } 
+
             flash_write_enable();
             flash_write(USER_DATA + n, buffer, len);
             flash_wait();
@@ -134,7 +136,6 @@ void copy_file(int index) {
             n += 256;
         }
     }
-
 }
 
 void main() {
