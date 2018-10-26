@@ -36,13 +36,13 @@ void sdcard_error2(char* msg, uint32_t r1, uint32_t r2) {
 }
 
 char games[MAX_GAMES][9];
-uint32_t first_cluster[MAX_GAMES];
-uint32_t file_size[MAX_GAMES];
+uint32_t first_clusters[MAX_GAMES];
+uint32_t file_sizes[MAX_GAMES];
 
-int num_games, game;
+int num_games;
 
 uint8_t buffer[512];
-uint32_t cluster_begin_lba, first_file_cluster, first_file_size;
+uint32_t cluster_begin_lba;
 uint8_t sectors_per_cluster;
 uint32_t fat[128];
 
@@ -61,20 +61,11 @@ void read_files() {
                 uint16_t first_cluster_lo = *((uint16_t *) &buffer[i+0x1a]);
                 uint32_t first_cluster = (first_cluster_hi << 16) + first_cluster_lo;
                 uint32_t file_size = *((uint32_t *) &buffer[i+0x1c]);
-                if ((attrib & 0x1f) == 0 && filename[9] == 'C') {
-                    first_file_cluster = first_cluster;
-                    for(int j=0;j<13;j++) first_file[j] = filename[j];
-                    first_file_size = file_size;
-
-#ifdef debug
-                    //print(filename);
-                    //print("\n");
-#endif
-
-                }
                 if ((attrib & 0x1f) == 0 && num_games < MAX_GAMES) {
                   for(int j=0;j<8;j++) games[num_games][j] = filename[j];
                   games[num_games][8] = 0;
+                  first_clusters[num_games] = first_cluster;
+                  file_sizes[num_games] = file_size;
                   num_games++;
                 }
             }
@@ -83,8 +74,8 @@ void read_files() {
 
 }
 
-void copy_file() {
-    uint32_t first_lba = cluster_begin_lba + ((first_file_cluster - 2) << 3);
+void copy_file(int index) {
+    uint32_t first_lba = cluster_begin_lba + ((first_clusters[index] - 2) << 3);
     sdcard_read(buffer, first_lba);
 
 #ifdef debug
@@ -105,7 +96,7 @@ void copy_file() {
   
     // Assumes file is less than 32kb
     uint32_t n = 0;
-    for(uint32_t i =first_file_cluster;i < 128;i = fat[i]) {
+    for(uint32_t i =first_clusters[index];i < 128;i = fat[i]) {
         uint32_t lba = cluster_begin_lba + ((i-2) << 3);
 
 #ifdef debug
@@ -114,7 +105,7 @@ void copy_file() {
 
         for(uint32_t j = 0; j<sectors_per_cluster;j++) {
             sdcard_read(buffer, lba+j);
-            uint32_t len = ((first_file_size - n) < 256 ? (first_file_size - n) : 256);
+            uint32_t len = ((file_sizes[index] - n) < 256 ? (file_sizes[index] - n) : 256);
             if (len == 0) break;
         
             flash_write_enable();
@@ -128,7 +119,7 @@ void copy_file() {
             
             if (len < 256) break;
             n += 256;
-            len = ((first_file_size - n) < 256 ? (first_file_size - n) : 256);
+            len = ((file_sizes[index] - n) < 256 ? (file_sizes[index] - n) : 256);
             if (len == 0) break;
 
             flash_write_enable();
@@ -275,13 +266,6 @@ void main() {
     print("\n");
 #endif
 
-    copy_file();
-
-    // power_down
-    flash_begin();
-    flash_xfer(0xb9);
-    flash_end();
-
     for(int i=0;i<num_games;i++)
       lcd_draw_text(92, 80 + i*20, games[i], 0xD0B7, 0x6E5D);
 
@@ -296,8 +280,21 @@ void main() {
 
       old_index = index;
 
-      if ((buttons & BUTTON_B))
+      if ((buttons & BUTTON_B) && !(old_buttons & BUTTON_B)) {
         if (++index == num_games) index = 0;
+      } else if ((buttons & BUTTON_A) && !(old_buttons & BUTTON_A)) {
+
+        copy_file(index);
+
+        // power_down
+        flash_begin();
+        flash_xfer(0xb9);
+        flash_end();
+
+        lcd_clear_screen(0x00);
+
+        break;
+      }
 
       if (index != old_index) {
         lcd_draw_text(80, 80 + (old_index*20), "  ", 0xD0B7, 0x6E5D);
