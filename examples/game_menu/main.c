@@ -36,111 +36,31 @@ void sdcard_error2(char* msg, uint32_t r1, uint32_t r2) {
 }
 
 char games[MAX_GAMES][9];
-int num_games;
+uint32_t first_cluster[MAX_GAMES];
+uint32_t file_size[MAX_GAMES];
 
-void main() {
-    reg_uart_clkdiv = 139;
+int num_games, game;
 
-    lcd_init();
+uint8_t buffer[512];
+uint32_t cluster_begin_lba, first_file_cluster, first_file_size;
+uint8_t sectors_per_cluster;
+uint32_t fat[128];
 
-    lcd_clear_screen(0x6E5D);
-
-    lcd_draw_text(80,40,"Choose a game :", 0x00A0, 0x6E5D);    
-
-    num_games = 0;
-
-    sdcard_init();
-
-    uint8_t buffer[512];
-
-    // Read the master boot record
-    sdcard_read(buffer, 0);
-
-#ifdef debug
-    if (buffer[510] == 0x55 && buffer[511] == 0xAA) print("MBR is valid.\n\n");
-#endif
-
-    uint8_t *part = &buffer[446];
-
-#ifdef debug
-    printf("Boot flag: %d\n", part[0]);
-    printf("Type code: 0x%x\n", part[4]);
-#endif
-
-    uint16_t *lba_begin = (uint16_t *) &part[8];
-
-    uint32_t part_lba_begin = lba_begin[0];
-
-#ifdef debug
-    printf("LBA begin: %ld\n", part_lba_begin);
-#endif
-
-    // Read the volume id
-    sdcard_read(buffer, part_lba_begin);
-
-#ifdef debug
-    if (buffer[510] == 0x55 && buffer[511] == 0xAA) print("Volume ID is valid\n\n");
-#endif
-
-    uint16_t num_rsvd_sectors = *((uint16_t *) &buffer[0x0e]);
-
-#ifdef debug
-    printf("Number of reserved sectors: %d\n", num_rsvd_sectors);
-#endif
-
-    uint8_t num_fats = buffer[0x10];
-    uint32_t sectors_per_fat = *((uint32_t *) &buffer[0x24]);
-    uint8_t sectors_per_cluster = buffer[0x0d];
-    uint32_t root_dir_first_cluster = *((uint32_t *) &buffer[0x2c]);
-
-#ifdef debug
-    printf("Number of FATs: %d\n", num_fats);
-    printf("Sectors per FAT: %ld\n", sectors_per_fat);
-    printf("Sectors per cluster: %d\n", sectors_per_cluster);
-    printf("Root dir first cluster: %ld\n", root_dir_first_cluster);
-#endif
-
-    uint32_t fat_begin_lba = part_lba_begin + num_rsvd_sectors;
-
-#ifdef debug
-    printf("fat begin lba: %ld\n", fat_begin_lba);
-#endif
-
-    // Assumes 2 FATs
-    uint32_t cluster_begin_lba = part_lba_begin + num_rsvd_sectors + (sectors_per_fat << 1);
-
-#ifdef debug
-    printf("cluster begin lba: %ld\n", cluster_begin_lba);
-#endif
-
-    // Assumes 8 sectors per cluster
-    uint32_t root_dir_lba = cluster_begin_lba + ((root_dir_first_cluster - 2) << 3);
-
-#ifdef debug
-    printf("root dir lba: %ld\n", root_dir_lba);
-#endif
-
-    // Read the root directory
-    sdcard_read(buffer, root_dir_lba);
-
+void read_files() {
     uint8_t filename[13], first_file[13];
     filename[8] = '.';
     filename[12] = 0;
     
-    uint16_t first_cluster_lo, first_cluster_hi;
-    uint32_t first_cluster, file_size, first_file_size, first_file_cluster = 0;
-    uint8_t attrib;
-
     for(int i=0; buffer[i];i+=32) {
         if (buffer[i] != 0xe5) {
             if (buffer[i+11] != 0x0f) {
                 for(int j=0;j<8;j++) filename[j] = buffer[i+j];
                 for(int j=0;j<3;j++) filename[9+j] = buffer[i+8+j];
-                attrib = buffer[i+0x0b];
-                first_cluster_hi = *((uint16_t *) &buffer[i+0x14]);
-                first_cluster_lo = *((uint16_t *) &buffer[i+0x1a]);
-                first_cluster = (first_cluster_hi << 16) + first_cluster_lo;
-                file_size = *((uint32_t *) &buffer[i+0x1c]);
+                uint8_t attrib = buffer[i+0x0b];
+                uint16_t first_cluster_hi = *((uint16_t *) &buffer[i+0x14]);
+                uint16_t first_cluster_lo = *((uint16_t *) &buffer[i+0x1a]);
+                uint32_t first_cluster = (first_cluster_hi << 16) + first_cluster_lo;
+                uint32_t file_size = *((uint32_t *) &buffer[i+0x1c]);
                 if ((attrib & 0x1f) == 0 && filename[9] == 'C') {
                     first_file_cluster = first_cluster;
                     for(int j=0;j<13;j++) first_file[j] = filename[j];
@@ -161,52 +81,9 @@ void main() {
         }
     }
 
-    // Configure flash access
-    reg_flash_prescale = 0;
-    reg_flash_mode = 0;
-    reg_flash_cs = 1;
+}
 
-    // power_up
-    flash_begin();
-    flash_xfer(0xab);
-    flash_end();
-
-    // read flash id
-    flash_begin();
-    flash_xfer(0x9f);
-
-#ifdef debug
-    print("flash id:");
-
-    for (int i = 0; i < 3; i++)
-        print_hex(flash_xfer(0x00), 2);
-	
-    print("\n");
-#endif
-
-    flash_end();
-
-#ifdef debug
-    printf("\nFirst file, first cluster: %ld\n", first_file_cluster);
-#endif
-
-    // Read first sector of the FAT
-    uint32_t fat[128];
-
-    sdcard_read((uint8_t *) fat, fat_begin_lba);
-
-#ifdef debug
-    for (int i = 0; i < 128; i++) {
-       for(int j=0; j<4; j++) {
-           print_hex(fat[i+ j*8],8);
-           print(" ");
-       }
-       print("\n");
-    }
-      
-    print("\n");
-#endif
-
+void copy_file() {
     uint32_t first_lba = cluster_begin_lba + ((first_file_cluster - 2) << 3);
     sdcard_read(buffer, first_lba);
 
@@ -266,6 +143,139 @@ void main() {
             n += 256;
         }
     }
+
+}
+
+void main() {
+    reg_uart_clkdiv = 139;
+
+    lcd_init();
+
+    lcd_clear_screen(0x6E5D);
+
+    lcd_draw_text(80,40,"Choose a game :", 0x00A0, 0x6E5D);    
+
+    num_games = 0;
+
+    sdcard_init();
+
+    // Read the master boot record
+    sdcard_read(buffer, 0);
+
+#ifdef debug
+    if (buffer[510] == 0x55 && buffer[511] == 0xAA) print("MBR is valid.\n\n");
+#endif
+
+    uint8_t *part = &buffer[446];
+
+#ifdef debug
+    printf("Boot flag: %d\n", part[0]);
+    printf("Type code: 0x%x\n", part[4]);
+#endif
+
+    uint16_t *lba_begin = (uint16_t *) &part[8];
+
+    uint32_t part_lba_begin = lba_begin[0];
+
+#ifdef debug
+    printf("LBA begin: %ld\n", part_lba_begin);
+#endif
+
+    // Read the volume id
+    sdcard_read(buffer, part_lba_begin);
+
+#ifdef debug
+    if (buffer[510] == 0x55 && buffer[511] == 0xAA) print("Volume ID is valid\n\n");
+#endif
+
+    uint16_t num_rsvd_sectors = *((uint16_t *) &buffer[0x0e]);
+
+#ifdef debug
+    printf("Number of reserved sectors: %d\n", num_rsvd_sectors);
+#endif
+
+    uint8_t num_fats = buffer[0x10];
+    uint32_t sectors_per_fat = *((uint32_t *) &buffer[0x24]);
+    sectors_per_cluster = buffer[0x0d];
+    uint32_t root_dir_first_cluster = *((uint32_t *) &buffer[0x2c]);
+
+#ifdef debug
+    printf("Number of FATs: %d\n", num_fats);
+    printf("Sectors per FAT: %ld\n", sectors_per_fat);
+    printf("Sectors per cluster: %d\n", sectors_per_cluster);
+    printf("Root dir first cluster: %ld\n", root_dir_first_cluster);
+#endif
+
+    uint32_t fat_begin_lba = part_lba_begin + num_rsvd_sectors;
+
+#ifdef debug
+    printf("fat begin lba: %ld\n", fat_begin_lba);
+#endif
+
+    // Assumes 2 FATs
+    cluster_begin_lba = part_lba_begin + num_rsvd_sectors + (sectors_per_fat << 1);
+
+#ifdef debug
+    printf("cluster begin lba: %ld\n", cluster_begin_lba);
+#endif
+
+    // Assumes 8 sectors per cluster
+    uint32_t root_dir_lba = cluster_begin_lba + ((root_dir_first_cluster - 2) << 3);
+
+#ifdef debug
+    printf("root dir lba: %ld\n", root_dir_lba);
+#endif
+
+    // Read the root directory
+    sdcard_read(buffer, root_dir_lba);
+
+    read_files();
+
+    // Configure flash access
+    reg_flash_prescale = 0;
+    reg_flash_mode = 0;
+    reg_flash_cs = 1;
+
+    // power_up
+    flash_begin();
+    flash_xfer(0xab);
+    flash_end();
+
+    // read flash id
+    flash_begin();
+    flash_xfer(0x9f);
+
+#ifdef debug
+    print("flash id:");
+
+    for (int i = 0; i < 3; i++)
+        print_hex(flash_xfer(0x00), 2);
+	
+    print("\n");
+#endif
+
+    flash_end();
+
+#ifdef debug
+    printf("\nFirst file, first cluster: %ld\n", first_file_cluster);
+#endif
+
+    // Read first sector of the FAT
+    sdcard_read((uint8_t *) fat, fat_begin_lba);
+
+#ifdef debug
+    for (int i = 0; i < 128; i++) {
+       for(int j=0; j<4; j++) {
+           print_hex(fat[i+ j*8],8);
+           print(" ");
+       }
+       print("\n");
+    }
+      
+    print("\n");
+#endif
+
+    copy_file();
 
     // power_down
     flash_begin();
