@@ -22,7 +22,7 @@ C_FILES = main.c \
           $(INCLUDE_DIR)/sdcard/sdcard.c \
           $(INCLUDE_DIR)/flash/flash.c
 
-DEFINES = -Dgpio -Dili9341_direct -Dsdcard -Dflash_write
+DEFINES = -Dgpio -Dili9341_direct -Dsdcard -Dflash_write -Dwarm_boot
 
 include $(HDL_DIR)/tiny_soc.mk
 

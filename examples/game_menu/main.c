@@ -9,6 +9,7 @@
 
 #define reg_uart_clkdiv (*(volatile uint32_t*)0x02000004)
 #define reg_buttons (*(volatile uint32_t*)0x03000004)
+#define reg_warm_boot (*(volatile uint32_t*)0x09000000)
 
 #define reg_uart_data (*(volatile uint32_t*)0x02000008)
 

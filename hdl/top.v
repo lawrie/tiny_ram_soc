@@ -135,6 +135,15 @@ module top (
     wire i2c_en    = (iomem_addr[31:24] == 8'h07); /* I2C device mapped to 0x07xx_xxxx */
     wire flash_en    = (iomem_addr[31:24] == 8'h08); /* flash memory SPI mapped to 0x08xx_xxxx */
 
+`ifdef warm_boot
+  wire boot_en    = (iomem_addr[31:24] == 8'h09); /* warm boot */
+  
+  SB_WARMBOOT warmboot_inst (
+    .S1(1'b0),
+    .S0(1'b1),
+    .BOOT(boot_en)
+  );
+`endif
 
 `ifdef pdm_audio
     wire audio_data;
