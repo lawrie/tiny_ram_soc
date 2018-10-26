@@ -75,8 +75,8 @@ void read_files() {
 
 }
 
-void copy_file(int index) {
-    uint32_t first_lba = cluster_begin_lba + ((first_clusters[index] - 2) << 3);
+void copy_file(uint32_t start, uint32_t first_cluster, uint32_t file_size) {
+    uint32_t first_lba = cluster_begin_lba + ((first_cluster - 2) << 3);
     sdcard_read(buffer, first_lba);
 
 #ifdef debug
@@ -92,7 +92,7 @@ void copy_file(int index) {
 
     // Assumes file is less than 32kb
     uint32_t n = 0;
-    for(uint32_t i =first_clusters[index];i < 128;i = fat[i]) {
+    for(uint32_t i = first_cluster;i < 128;i = fat[i]) {
         uint32_t lba = cluster_begin_lba + ((i-2) << 3);
 
 #ifdef debug
@@ -101,36 +101,36 @@ void copy_file(int index) {
 
         for(uint32_t j = 0; j<sectors_per_cluster;j++) {
             sdcard_read(buffer, lba+j);
-            uint32_t len = ((file_sizes[index] - n) < 256 ? (file_sizes[index] - n) : 256);
+            uint32_t len = ((file_size - n) < 256 ? (file_size - n) : 256);
             if (len == 0) break;
        
             if ((n & 0x7fff) == 0) {
                 // Erase data in 32kb chunks
                 flash_write_enable();
-                flash_erase_32kB(USER_IMAGE + n);
+                flash_erase_32kB(start + n);
                 flash_wait();
             } 
 
             flash_write_enable();
-            flash_write(USER_IMAGE + n, buffer, len);
+            flash_write(start + n, buffer, len);
             flash_wait();
 
-            // Read back the data and send it to the uart
-            flash_read(USER_IMAGE + n, buffer, len);
+            // Read back the data
+            flash_read(start + n, buffer, len);
             //for(int k =0; k<len; k++)
             //  reg_uart_data = buffer[k];
             
             if (len < 256) break;
             n += 256;
-            len = ((file_sizes[index] - n) < 256 ? (file_sizes[index] - n) : 256);
+            len = ((file_size - n) < 256 ? (file_size - n) : 256);
             if (len == 0) break;
 
             flash_write_enable();
-            flash_write(USER_IMAGE + n, buffer + 256, len);
+            flash_write(start + n, buffer + 256, len);
             flash_wait();
 
-            // Read back the data and send it to the uart
-            flash_read(USER_IMAGE + n, buffer + 256, len);
+            // Read back the data
+            flash_read(start + n, buffer + 256, len);
             //for(int k =0; k<len; k++)
             //  reg_uart_data = buffer[256+k];
   
@@ -286,7 +286,7 @@ void main() {
         if (++index == num_games) index = 0;
       } else if ((buttons & BUTTON_A) && !(old_buttons & BUTTON_A)) {
 
-        copy_file(index);
+        copy_file(USER_IMAGE, first_clusters[index], file_sizes[index]);
 
         // power_down
         flash_begin();
