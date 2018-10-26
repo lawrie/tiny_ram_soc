@@ -107,18 +107,18 @@ void copy_file(int index) {
             if ((n & 0x7fff) == 0) {
                 // Erase data in 32kb chunks
                 flash_write_enable();
-                flash_erase_32kB(USER_DATA + n);
+                flash_erase_32kB(USER_IMAGE + n);
                 flash_wait();
             } 
 
             flash_write_enable();
-            flash_write(USER_DATA + n, buffer, len);
+            flash_write(USER_IMAGE + n, buffer, len);
             flash_wait();
 
             // Read back the data and send it to the uart
-            flash_read(USER_DATA + n, buffer, len);
-            for(int k =0; k<len; k++)
-              reg_uart_data = buffer[k];
+            flash_read(USER_IMAGE + n, buffer, len);
+            //for(int k =0; k<len; k++)
+            //  reg_uart_data = buffer[k];
             
             if (len < 256) break;
             n += 256;
@@ -126,13 +126,13 @@ void copy_file(int index) {
             if (len == 0) break;
 
             flash_write_enable();
-            flash_write(USER_DATA + n, buffer + 256, len);
+            flash_write(USER_IMAGE + n, buffer + 256, len);
             flash_wait();
 
             // Read back the data and send it to the uart
-            flash_read(USER_DATA + n, buffer + 256, len);
-            for(int k =0; k<len; k++)
-              reg_uart_data = buffer[256+k];
+            flash_read(USER_IMAGE + n, buffer + 256, len);
+            //for(int k =0; k<len; k++)
+            //  reg_uart_data = buffer[256+k];
   
             n += 256;
         }
@@ -294,6 +294,8 @@ void main() {
         flash_end();
 
         lcd_clear_screen(0x00);
+
+        reg_warm_boot = 0; // Reboot
 
         break;
       }
