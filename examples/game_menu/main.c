@@ -64,6 +64,12 @@ void read_files() {
                 uint32_t file_size = *((uint32_t *) &buffer[i+0x1c]);
                 if ((attrib & 0x1f) == 0 && num_games < MAX_GAMES) {
                   for(int j=0;j<8;j++) games[num_games][j] = filename[j];
+                  print(filename);
+                  print(" ");
+                  print_hex(first_cluster, 8);
+                  print(" ");
+                  print_hex(file_size, 8);
+                  print("\n");
                   games[num_games][8] = 0;
                   first_clusters[num_games] = first_cluster;
                   file_sizes[num_games] = file_size;
@@ -90,8 +96,8 @@ void copy_file(uint32_t start, uint32_t first_cluster, uint32_t file_size) {
     print("\n");
 #endif
 
-    // Assumes file is less than 32kb
     uint32_t n = 0;
+    // Assumes just one FAT sector
     for(uint32_t i = first_cluster;i < 128;i = fat[i]) {
         uint32_t lba = cluster_begin_lba + ((i-2) << 3);
 
@@ -100,6 +106,7 @@ void copy_file(uint32_t start, uint32_t first_cluster, uint32_t file_size) {
 #endif
 
         for(uint32_t j = 0; j<sectors_per_cluster;j++) {
+            printf("Reading sector", lba+j);
             sdcard_read(buffer, lba+j);
             uint32_t len = ((file_size - n) < 256 ? (file_size - n) : 256);
             if (len == 0) break;
@@ -136,6 +143,7 @@ void copy_file(uint32_t start, uint32_t first_cluster, uint32_t file_size) {
   
             n += 256;
         }
+        if (n >= file_size) break;
     }
 }
 
@@ -256,17 +264,15 @@ void main() {
     // Read first sector of the FAT
     sdcard_read((uint8_t *) fat, fat_begin_lba);
 
-#ifdef debug
-    for (int i = 0; i < 128; i++) {
+    for (int i = 0; i < 32; i++) {
        for(int j=0; j<4; j++) {
-           print_hex(fat[i+ j*8],8);
+           print_hex(fat[i*4+ j],8);
            print(" ");
        }
        print("\n");
     }
       
     print("\n");
-#endif
 
     for(int i=0;i<num_games;i++)
       lcd_draw_text(92, 80 + i*20, games[i], 0xD0B7, 0x6E5D);
@@ -285,6 +291,8 @@ void main() {
       if ((buttons & BUTTON_B) && !(old_buttons & BUTTON_B)) {
         if (++index == num_games) index = 0;
       } else if ((buttons & BUTTON_A) && !(old_buttons & BUTTON_A)) {
+
+        printf("Copy file size ", file_sizes[index]);
 
         copy_file(USER_IMAGE, first_clusters[index], file_sizes[index]);
 
