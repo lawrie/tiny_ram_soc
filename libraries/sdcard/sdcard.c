@@ -154,7 +154,7 @@ void sdcard_init()
         uint32_t r37;
 
         sdcard_cs(false);
-        reg_sdcard_prescale = 32;
+        reg_sdcard_prescale = 4;
 
         reg_sdcard_mode = 0;
 

@@ -44,7 +44,7 @@ void lcd_init() {
         lcd_send_data(0xC0);
 
         lcd_send_cmd(ILI9341_MEMCONTROL);
-        lcd_send_data(ILI9341_MADCTL_MV | ILI9341_MADCTL_BGR);
+        lcd_send_data(ILI9341_MADCTL_MV | ILI9341_MADCTL_MY | ILI9341_MADCTL_MX | ILI9341_MADCTL_BGR);
 
         lcd_send_cmd(ILI9341_PIXELFORMAT);
         lcd_send_data(0x55);
