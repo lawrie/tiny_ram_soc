@@ -46,6 +46,7 @@ uint8_t buffer[512];
 uint32_t cluster_begin_lba;
 uint8_t sectors_per_cluster;
 uint32_t fat[128];
+uint32_t fat_begin_lba;
 
 void read_files() {
     uint8_t filename[13], first_file[13];
@@ -83,9 +84,10 @@ void read_files() {
 
 void copy_file(uint32_t start, uint32_t first_cluster, uint32_t file_size) {
     uint32_t first_lba = cluster_begin_lba + ((first_cluster - 2) << 3);
-    sdcard_read(buffer, first_lba);
 
 #ifdef debug
+    sdcard_read(buffer, first_lba);
+
     printf("\nFile first sector ", first_lba);
 
     for (int i = 0; i < 512; i++) {
@@ -96,10 +98,28 @@ void copy_file(uint32_t start, uint32_t first_cluster, uint32_t file_size) {
     print("\n");
 #endif
 
+    if (first_cluster > 0x7f) sdcard_read((uint8_t *) fat, fat_begin_lba+1);
+
     uint32_t n = 0;
-    // Assumes just one FAT sector
-    for(uint32_t i = first_cluster;i < 128;i = fat[i]) {
-        uint32_t lba = cluster_begin_lba + ((i-2) << 3);
+    // Assumes just two FAT sectors
+    for(uint32_t i = first_cluster;i < 256;i = fat[i & 0x7f]) {
+
+        if (i == 0x80) {
+          print("Reading second fat sector\n");
+          sdcard_read((uint8_t *) fat, fat_begin_lba+1);
+            
+          for (int i = 0; i < 32; i++) {
+            for(int j=0; j<4; j++) {
+              print_hex(fat[i*4+ j],8);
+              print(" ");
+            }
+            print("\n");
+          }
+
+          print("\n");
+        }
+        
+        uint32_t lba = cluster_begin_lba + ((i -2) << 3);
 
 #ifdef debug
         printf("Cluster: %ld, lba: %ld\n", i, lba);
@@ -207,7 +227,7 @@ void main() {
     printf("Root dir first cluster: %ld\n", root_dir_first_cluster);
 #endif
 
-    uint32_t fat_begin_lba = part_lba_begin + num_rsvd_sectors;
+    fat_begin_lba = part_lba_begin + num_rsvd_sectors;
 
 #ifdef debug
     printf("fat begin lba: %ld\n", fat_begin_lba);
