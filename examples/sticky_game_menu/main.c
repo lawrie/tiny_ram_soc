@@ -17,7 +17,7 @@
 #define USER_DATA  0x50000
 #define TOP_IMAGE  0x78000
 
-#define MAX_GAMES 4
+#define MAX_GAMES 6
 
 #define printf sdcard_error
 
