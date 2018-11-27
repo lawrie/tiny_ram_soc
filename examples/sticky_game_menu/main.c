@@ -99,15 +99,20 @@ void copy_file(uint32_t start, uint32_t first_cluster, uint32_t file_size) {
     print("\n");
 #endif
 
-    if (first_cluster > 0x7f) sdcard_read((uint8_t *) fat, fat_begin_lba+1);
+    uint32_t fat_sector = first_cluster >> 7;
+    printf("First cluster ", first_cluster);
+    printf("Fat Sector ", fat_sector);
+
+    sdcard_read((uint8_t *) fat, fat_begin_lba + fat_sector);
 
     uint32_t n = 0;
-    // Assumes just two FAT sectors
-    for(uint32_t i = first_cluster;i < 256;i = fat[i & 0x7f]) {
+    // Assumes no more han 8 clusters
+    for(uint32_t i = first_cluster;i < 1024;i = fat[i & 0x7f]) {
 
-        if (i == 0x80) {
-          print("Reading second fat sector\n");
-          sdcard_read((uint8_t *) fat, fat_begin_lba+1);
+        if ((i >> 7) != fat_sector) {
+          fat_sector = i >> 7;
+          printf("Reading fat sector ", fat_sector);
+          sdcard_read((uint8_t *) fat, fat_begin_lba + fat_sector);
             
           for (int i = 0; i < 32; i++) {
             for(int j=0; j<4; j++) {
@@ -314,10 +319,14 @@ void main() {
       } else if ((buttons & BUTTON_A) && !(old_buttons & BUTTON_A)) {
 
         printf("Copy file size ", file_sizes[index]);
-
+        print("\n");
+        
         copy_file(TOP_IMAGE, first_clusters[index], 135100);
-        // Assumes file is in contiguous clusters
-        copy_file(USER_DATA, first_clusters[index] + 40, file_sizes[index] - 0x28000);
+        
+        if (file_sizes[index] > 0x28000) {
+          // Assumes file is in contiguous clusters
+          copy_file(USER_DATA, first_clusters[index] + 40, file_sizes[index] - 0x28000);
+        }
 
         // power_down
         flash_begin();
